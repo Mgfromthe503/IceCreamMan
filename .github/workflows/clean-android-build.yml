@@ -1,0 +1,103 @@
+name: Clean Android Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app.config.ts'
+      - 'config/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'eas.json'
+      - '.github/workflows/clean-android-build.yml'
+      - 'src/**'
+      - 'app/**'
+      - 'assets/**'
+
+env:
+  EXPO_NO_DOCTOR: '1'
+
+jobs:
+  validate:
+    name: Validate clean Android identity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify identity and release configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+          const eas = JSON.parse(fs.readFileSync('eas.json','utf8'));
+          const app = fs.readFileSync('app.config.ts','utf8');
+          const forbidden = [
+            'com.icecreamman.app',
+            '5bf9c92f-2974-422e-b6cb-958d6f7ae469',
+            'BE:D6:3F:D3:DA:34:F1:EF:18:19:68:F9:B0:E0:35:E3:23:1B:E5:7C',
+            '89:61:BC:40:53:C1:21:FF:A4:1F:58:46:98:A5:C5:11:4B:9B:2E:BF'
+          ];
+          if (!app.includes('com.icecreamman.launch')) throw new Error('New Android package ID is missing from app.config.ts');
+          if (!eas.build?.production?.android) throw new Error('Missing production Android EAS profile');
+          if (eas.build.production.android.buildType !== 'app-bundle') throw new Error('Production build must produce an AAB');
+          if (pkg.version !== '1.0.0') console.log(`Package version is ${pkg.version}; this is allowed for subsequent releases.`);
+          const all = ['app.config.ts','eas.json','package.json','config'];
+          for (const f of all) {
+            if (!fs.existsSync(f)) continue;
+            const data = fs.statSync(f).isDirectory() ? '' : fs.readFileSync(f,'utf8');
+            for (const x of forbidden) if (data.includes(x)) throw new Error(`Forbidden legacy release identity found in ${f}: ${x}`);
+          }
+          console.log('Clean Android identity validation passed.');
+          NODE
+
+      - name: EAS project/build configuration check
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx --yes eas-cli@latest whoami
+          npx --yes eas-cli@latest build:configure --non-interactive
+
+  build:
+    name: Build clean Android AAB
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Initialize/link EAS project
+        run: |
+          npx --yes eas-cli@latest init --non-interactive
+
+      - name: Build production Android App Bundle
+        run: |
+          npx --yes eas-cli@latest build --platform android --profile production --non-interactive --no-wait
+
+      - name: Record build submission
+        run: |
+          echo 'EAS build submitted successfully.'
+          echo 'The EAS build URL can be obtained from the workflow log.'
