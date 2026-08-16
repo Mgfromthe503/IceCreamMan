@@ -1,0 +1,10 @@
+# Monorepo workspace — The Ice Cream Man
+# Primary app + server live at the repo root (single package).
+# packages/* is reserved for future shared libraries (e.g. types, UI).
+packages:
+  - "."
+  - "packages/*"
+
+# pnpm 9.12.0 is pinned for EAS and resolves overrides from package.json
+# "pnpm.overrides". Keep this file free of an `overrides:` block until the
+# project intentionally upgrades its package-manager contract.

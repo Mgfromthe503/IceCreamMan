@@ -1,0 +1,33 @@
+import { COOKIE_NAME } from "../shared/const.js";
+import { getSessionCookieOptions } from "./_core/cookies";
+import { systemRouter } from "./_core/systemRouter";
+import { publicProcedure, router } from "./_core/trpc";
+import { requestsRouter, driverRouter } from "./routers-requests";
+import { paymentRouter, reportsRouter } from "./routers-payment";
+
+export const appRouter = router({
+  // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
+  system: systemRouter,
+  auth: router({
+    me: publicProcedure.query((opts) => opts.ctx.user),
+    logout: publicProcedure.mutation(({ ctx }) => {
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      return {
+        success: true,
+      } as const;
+    }),
+  }),
+
+  // Ice Cream Request API
+  requests: requestsRouter,
+  driver: driverRouter,
+
+  // Payment & Monetization
+  payment: paymentRouter,
+
+  // Daily Reports & Analytics
+  reports: reportsRouter,
+});
+
+export type AppRouter = typeof appRouter;

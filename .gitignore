@@ -1,0 +1,11 @@
+node_modules/
+.expo/
+.eas/
+dist/
+build/
+*.jks
+*.keystore
+*.p12
+*.pfx
+.env
+.env.*
