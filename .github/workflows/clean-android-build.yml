@@ -8,15 +8,19 @@ on:
       - 'app.config.ts'
       - 'config/**'
       - 'package.json'
-      - 'package-lock.json'
+      - 'pnpm-lock.yaml'
       - 'eas.json'
       - '.github/workflows/clean-android-build.yml'
       - 'src/**'
       - 'app/**'
       - 'assets/**'
 
+permissions:
+  contents: write
+
 env:
   EXPO_NO_DOCTOR: '1'
+  PNPM_VERSION: '9.12.0'
 
 jobs:
   validate:
@@ -30,10 +34,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+          run_install: false
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --no-frozen-lockfile
 
       - name: Verify identity and release configuration
         shell: bash
@@ -44,31 +53,41 @@ jobs:
           const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
           const eas = JSON.parse(fs.readFileSync('eas.json','utf8'));
           const app = fs.readFileSync('app.config.ts','utf8');
+          const identity = fs.readFileSync('config/app-identity.js','utf8');
           const forbidden = [
             'com.icecreamman.app',
             '5bf9c92f-2974-422e-b6cb-958d6f7ae469',
             'BE:D6:3F:D3:DA:34:F1:EF:18:19:68:F9:B0:E0:35:E3:23:1B:E5:7C',
             '89:61:BC:40:53:C1:21:FF:A4:1F:58:46:98:A5:C5:11:4B:9B:2E:BF'
           ];
-          if (!app.includes('com.icecreamman.launch')) throw new Error('New Android package ID is missing from app.config.ts');
-          if (!eas.build?.production?.android) throw new Error('Missing production Android EAS profile');
-          if (eas.build.production.android.buildType !== 'app-bundle') throw new Error('Production build must produce an AAB');
-          if (pkg.version !== '1.0.0') console.log(`Package version is ${pkg.version}; this is allowed for subsequent releases.`);
-          const all = ['app.config.ts','eas.json','package.json','config'];
-          for (const f of all) {
-            if (!fs.existsSync(f)) continue;
-            const data = fs.statSync(f).isDirectory() ? '' : fs.readFileSync(f,'utf8');
+          if (!identity.includes('com.icecreamman.launch')) throw new Error('New Android package ID is missing from canonical identity.');
+          if (!app.includes('APP_BUNDLE_ID')) throw new Error('app.config.ts is not consuming canonical app identity.');
+          if (!eas.build?.production?.android) throw new Error('Missing production Android EAS profile.');
+          if (eas.build.production.android.buildType !== 'app-bundle') throw new Error('Production build must produce an AAB.');
+          const files = ['app.config.ts','eas.json','package.json','config/app-identity.js'];
+          for (const f of files) {
+            const data = fs.readFileSync(f,'utf8');
             for (const x of forbidden) if (data.includes(x)) throw new Error(`Forbidden legacy release identity found in ${f}: ${x}`);
           }
+          console.log(`Clean identity: com.icecreamman.launch`);
+          console.log(`Version: ${pkg.version}`);
           console.log('Clean Android identity validation passed.');
           NODE
 
-      - name: EAS project/build configuration check
+      - name: EAS authentication check
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx --yes eas-cli@latest whoami
+
+      - name: Persist generated lockfile
         run: |
-          npx --yes eas-cli@latest whoami
-          npx --yes eas-cli@latest build:configure --non-interactive
+          if ! git diff --quiet -- pnpm-lock.yaml; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add pnpm-lock.yaml
+            git commit -m 'Add deterministic pnpm lockfile'
+            git push
+          fi
 
   build:
     name: Build clean Android AAB
@@ -84,20 +103,26 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+          run_install: false
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Initialize/link EAS project
-        run: |
-          npx --yes eas-cli@latest init --non-interactive
+      - name: Initialize or link EAS project
+        run: npx --yes eas-cli@latest init --non-interactive
+
+      - name: Ensure Android build configuration
+        run: npx --yes eas-cli@latest build:configure --platform android --non-interactive
 
       - name: Build production Android App Bundle
-        run: |
-          npx --yes eas-cli@latest build --platform android --profile production --non-interactive --no-wait
+        run: npx --yes eas-cli@latest build --platform android --profile production --non-interactive --no-wait
 
       - name: Record build submission
         run: |
-          echo 'EAS build submitted successfully.'
-          echo 'The EAS build URL can be obtained from the workflow log.'
+          echo 'Clean production AAB build submitted to EAS.'
+          echo 'EAS build URL is available in the preceding command output.'
