@@ -25,7 +25,7 @@ env:
 
 jobs:
   validate:
-    name: Ten-point release preflight
+    name: Release preflight and EAS validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -42,28 +42,20 @@ jobs:
           version: 9.12.0
           run_install: false
 
-      - name: Configure pnpm store cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/pnpm/store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
+      - name: Normalize lockfile metadata
+        run: pnpm install --lockfile-only --no-frozen-lockfile
 
-      - name: Install project dependencies for Expo config evaluation
-        run: pnpm install --frozen-lockfile
+      - name: Install project dependencies
+        run: pnpm install --no-frozen-lockfile
 
-      - name: Run ten release checks
+      - name: Run release checks
         run: node scripts/release-preflight.mjs
 
       - name: EAS authentication check
         env:
           EXPO_TOKEN: ${{ secrets.EXPOTOKEN }}
         run: |
-          if [ -z "$EXPO_TOKEN" ]; then
-            echo "EXPOTOKEN is unavailable to this repository Actions workflow."
-            exit 1
-          fi
+          test -n "$EXPO_TOKEN"
           npx --yes eas-cli@latest whoami
 
       - name: EAS account/project visibility check
@@ -92,21 +84,13 @@ jobs:
           version: 9.12.0
           run_install: false
 
-      - name: Configure pnpm store cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/pnpm/store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
+      - name: Normalize lockfile metadata
+        run: pnpm install --lockfile-only --no-frozen-lockfile
 
       - name: Install project dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
-      - name: Initialize or link the new EAS project
-        run: npx --yes eas-cli@latest init --non-interactive
-
-      - name: Verify the EAS project selected by Expo
+      - name: Verify EAS project
         run: npx --yes eas-cli@latest project:info --non-interactive
 
       - name: Ensure Android EAS build configuration
@@ -117,8 +101,5 @@ jobs:
 
       - name: Release completion marker
         run: |
-          echo '============================================='
           echo 'CLEAN ICE CREAM MAN ANDROID BUILD COMPLETE'
-          echo '============================================='
-          echo 'The production AAB completed through Expo/EAS.'
-          echo 'The EAS build URL and artifact are in the preceding output.'
+          echo 'Production AAB completed through Expo/EAS.'
