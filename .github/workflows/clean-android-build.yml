@@ -58,6 +58,11 @@ jobs:
           test -n "$EXPO_TOKEN"
           npx --yes eas-cli@latest whoami
 
+      - name: Initialize or link EAS project
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPOTOKEN }}
+        run: npx --yes eas-cli@latest init --non-interactive
+
       - name: EAS account/project visibility check
         env:
           EXPO_TOKEN: ${{ secrets.EXPOTOKEN }}
