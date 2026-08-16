@@ -61,7 +61,7 @@ jobs:
       - name: Initialize or link EAS project
         env:
           EXPO_TOKEN: ${{ secrets.EXPOTOKEN }}
-        run: npx --yes eas-cli@latest init --non-interactive
+        run: npx --yes eas-cli@latest init --force --non-interactive
 
       - name: EAS account/project visibility check
         env:
